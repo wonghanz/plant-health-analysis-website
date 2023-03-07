@@ -1,61 +1,12 @@
-<!DOCTYPE html>
 <html>
 <head>
-	<title>I-Plantation</title>
-	<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.0.4/dist/mobilenet.min.js"></script>
+    <title>I-Plantation</title>
 </head>
 <body>
-	<h1>I-Plantation</h1>
-	<p>Upload an image of a plant to analyze its health:</p>
-	<input type="file" onchange="previewImage(event)">
-	<br><br>
-	<img id="preview" src="" alt="Preview Image" style="max-width: 300px;">
-	<br><br>
-	<button onclick="analyze()">Analyze</button>
-	<br><br>
-	<div id="result"></div>
-
-	<script>
-		// Load the MobileNet model
-		let model;
-		async function loadModel() {
-			model = await mobilenet.load();
-			console.log('Model loaded');
-		}
-		loadModel();
-
-		// Preview the selected image
-		function previewImage(event) {
-			var preview = document.getElementById('preview');
-			preview.src = URL.createObjectURL(event.target.files[0]);
-			preview.style.display = 'block';
-		}
-
-		// Analyze the uploaded image
-		async function analyze() {
-			var preview = document.getElementById('preview');
-			var result = document.getElementById('result');
-			result.innerHTML = 'Analyzing...';
-
-			// Preprocess the image
-			var tensor = tf.browser.fromPixels(preview);
-			tensor = tf.image.resizeBilinear(tensor, [224, 224]);
-			tensor = tensor.expandDims();
-			tensor = tensor.toFloat().div(tf.scalar(255));
-
-			// Make the prediction
-			var predictions = await model.classify(tensor);
-			var prediction = predictions[0];
-
-			// Show the result
-			if (prediction.className.includes('healthy')) {
-				result.innerHTML = 'The plant is healthy!';
-			} else {
-				result.innerHTML = 'The plant is not healthy.';
-			}
-			result.innerHTML += '<br>Probability: ' + prediction.probability.toFixed(2);
-		}
-	</script>
+    <h1>Plant Health Analysis</h1>
+    <form method="POST" action="/" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <input type="submit" value="Upload">
+    </form>
 </body>
 </html>
