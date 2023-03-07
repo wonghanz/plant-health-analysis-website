@@ -1,64 +1,69 @@
-from flask import Flask, render_template, request, jsonify
-from werkzeug.utils import secure_filename
-import tensorflow as tf
-import cv2
+import os
 import numpy as np
+from flask import Flask, render_template, request, redirect, url_for, jsonify
+from werkzeug.utils import secure_filename
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
+from tensorflow.keras.applications.inception_v3 import preprocess_input
+from tensorflow.keras.models import Model
+import tensorflow as tf
+import json
+
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
 app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Load pre-trained InceptionV3 model
-model = tf.keras.applications.InceptionV3(weights='imagenet')
+# 加载预训练的 InceptionV3 模型，并微调以用于植物健康分析
+def load_inception_model():
+    base_model = tf.keras.applications.InceptionV3(weights='imagenet', include_top=False)
+    x = base_model.output
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
+    x = tf.keras.layers.Dense(1024, activation='relu')(x)
+    predictions = tf.keras.layers.Dense(5, activation='softmax')(x)
+    model = Model(inputs=base_model.input, outputs=predictions)
+    for layer in base_model.layers:
+        layer.trainable = False
+    model.compile(optimizer=tf.keras.optimizers.Adam(lr=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
+    model.load_weights('inception_model.h5')
+    return model
 
-# Define list of plant diseases
-plant_diseases = ['Apple Scab', 'Black Rot', 'Cedar Apple Rust', 'Healthy']
+inception_model = load_inception_model()
 
-# Define function to preprocess image
-def preprocess_image(image_path):
-    # Load image
-    img = cv2.imread(image_path)
-    # Resize image
-    img = cv2.resize(img, (299, 299))
-    # Convert from BGR to RGB
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    # Convert to numpy array
-    img = np.array(img)
-    # Preprocess input
-    img = tf.keras.applications.inception_v3.preprocess_input(img)
-    return img
+# 检查文件类型是否符合要求
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# Define function to predict plant disease
-def predict_plant_disease(image_path):
-    # Preprocess image
-    img = preprocess_image(image_path)
-    # Make prediction using model
-    preds = model.predict(np.array([img]))
-    # Decode prediction
-    decoded_preds = tf.keras.applications.inception_v3.decode_predictions(preds, top=1)[0][0]
-    # Get predicted class name
-    predicted_class = decoded_preds[1]
-    return predicted_class
+# 预处理并分析植物的照片
+def analyze_plant(filename):
+    image = load_img(filename, target_size=(299, 299))
+    x = img_to_array(image)
+    x = np.expand_dims(x, axis=0)
+    x = preprocess_input(x)
+    prediction = inception_model.predict(x)
+    return np.argmax(prediction[0])
 
-# Define route for home page
+# 网站首页
 @app.route('/')
-def home():
-    return render_template('home.html')
+def index():
+    return render_template('index.html')
 
-# Define route for plant health analysis
+# 处理文件上传请求
 @app.route('/analyze', methods=['POST'])
-def analyze():
-    # Get image from form
-    image_file = request.files['image']
-    # Save image to temporary folder
-    filename = secure_filename(image_file.filename)
-    image_path = f'temp/{filename}'
-    image_file.save(image_path)
-    # Predict plant disease
-    predicted_class = predict_plant_disease(image_path)
-    # Return result
-    result = {
-        'predicted_class': predicted_class
-    }
-    return jsonify(result)
+def upload_file():
+    if 'file' not in request.files:
+        return redirect(request.url)
+    file = request.files['file']
+    if file.filename == '':
+        return redirect(request.url)
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        result = analyze_plant(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        return jsonify({'result': result})
+    else:
+        return redirect(request.url)
 
 if __name__ == '__main__':
     app.run(debug=True)
